@@ -1,2 +1,2 @@
 # zcp
-ZFS fast copy program
+ZFS (experimental!) fast copy program
