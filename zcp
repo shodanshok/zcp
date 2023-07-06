@@ -135,8 +135,7 @@ if "@" not in str(src["dataset"]):
     args.unsafe = True
 
 # sync pool and write record map into temp files
-cmd = ["zpool", "sync"]
-subprocess.run(cmd)
+execute(["zpool", "sync"])
 for tgt in (src, dst):
     tgt["tmp"] = tempfile.TemporaryFile(mode="w+")
     cmd = ["zdb", "-Ovv", tgt["dataset"], tgt["relative"]]
