@@ -41,7 +41,7 @@ dst = {
 
 
 def execute(cmd):
-    message(cmd, 3)
+    message(cmd, 2)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result:
         if result.stderr:
@@ -53,7 +53,7 @@ def execute(cmd):
 
 
 def background(cmd, tgt):
-    message(cmd, 3)
+    message(cmd, 2)
     result = subprocess.Popen(cmd, stdout=tgt["tmp"], stderr=subprocess.DEVNULL)
     if result:
         if result.stderr:
@@ -66,6 +66,8 @@ def background(cmd, tgt):
 
 def message(msg, level=0):
     if args.verbose >= level:
+        if args.timestamp:
+            print("[" + datetime.datetime.now().isoformat() + "] ", end="")
         print(msg)
 
 
@@ -84,6 +86,13 @@ parser.add_argument(
     help="verbose",
 )
 parser.add_argument(
+    "-t",
+    "--timestamp",
+    action="store_true",
+    default=False,
+    help="print detailed timestamps",
+)
+parser.add_argument(
     "-n",
     "--dryrun",
     action="store_true",
@@ -91,11 +100,11 @@ parser.add_argument(
     help="dry run (do not alter destination file)",
 )
 parser.add_argument(
-    "-u",
-    "--unsafe",
+    "-c",
+    "--checksum",
     action="store_true",
     default=False,
-    help="unsafe check (checksum-based only)",
+    help="checksum-based comparison (default: dva-based)",
 )
 args = parser.parse_args()
 src["path"] = args.srcfile
@@ -132,9 +141,15 @@ if src["recordsize"] != dst["recordsize"]:
 
 # if source is a file, we need checksum comparison
 if "@" not in str(src["dataset"]):
-    args.unsafe = True
+    message("Copying unrelated files, dva-based comparison unavailable")
+    args.checksum = True
+
+# warn if using checksum-based comparison
+if args.checksum:
+    message("Checksum comparison selected, beware of collisions!")
 
 # sync pool and write record map into temp files
+message("Synching pool and running zdb", 1)
 execute(["zpool", "sync"])
 for tgt in (src, dst):
     tgt["tmp"] = tempfile.TemporaryFile(mode="w+")
@@ -148,10 +163,9 @@ src["tmp"].seek(0)
 dst["tmp"].seek(0)
 
 # scan records
-# unsafe: checksum based only, beware of collisions
+# checksum: beware of collisions
 # safe/default: dva-based, no collision but more writes
-if args.unsafe:
-    message("Checksum comparison selected, beware of collisions!", 0)
+if args.checksum:
     for tgt in (src, dst):
         for line in tgt["tmp"].readlines():
             m = re.search("^\s+ (\w+) +L0", line)
@@ -178,21 +192,22 @@ else:
 
 # compare records
 # src to dst
+message("Comparing src and dst records", 1)
 for record in src["records"]:
     scksum = src["records"][record]
     if record in dst["records"]:
         dcksum = dst["records"][record]
         if scksum != "NULL" and scksum == dcksum:
-            message("SAME: " + record + " src:" + scksum + " dst:" + dcksum, 2)
+            message("SAME: " + record + " src:" + scksum + " dst:" + dcksum, 3)
         else:
             diff.append(record)
-            message("DIFF: " + record + " src:" + scksum + " dst:" + dcksum, 2)
+            message("DIFF: " + record + " src:" + scksum + " dst:" + dcksum, 3)
     else:
         if scksum == "ZERO":
-            message("SAME: " + record + " src:" + scksum + " dst:ZERO", 2)
+            message("SAME: " + record + " src:" + scksum + " dst:ZERO", 3)
         else:
             diff.append(record)
-            message("DIFF: " + record + " src:" + scksum + " dst:ZERO", 2)
+            message("DIFF: " + record + " src:" + scksum + " dst:ZERO", 3)
 # dst to src (missing records only)
 for record in dst["records"]:
     if int(record, 16) >= src["size"]:
@@ -200,14 +215,15 @@ for record in dst["records"]:
     dcksum = dst["records"][record]
     if record not in src["records"]:
         if dcksum == "ZERO":
-            message("SAME: " + record + " src:ZERO" + " dst:" + dcksum, 2)
+            message("SAME: " + record + " src:ZERO" + " dst:" + dcksum, 3)
         else:
             diff.append(record)
-            message("DIFF: " + record + " src:ZERO" + " dst:" + dcksum, 2)
+            message("DIFF: " + record + " src:ZERO" + " dst:" + dcksum, 3)
+
 stop1 = datetime.datetime.now().timestamp()
-delta = round(stop1 - start, 2)
+delta = stop1 - start
 speed = round((src["size"] + dst["size"]) / delta / 1024 / 1024, 2)
-message("File scan speed at " + str(speed) + " MB/s, duration " + str(delta) + "s", 1)
+message("File scan speed:   " + str(speed) + " MB/s, " + str(round(delta, 2)) + "s", 1)
 
 # sync files
 if not args.dryrun:
@@ -216,7 +232,7 @@ if not args.dryrun:
     srcfile.seek(0)
     dstfile.seek(0)
     for record in diff:
-        message("WRITE: " + record, 2)
+        message("WRITE: " + str(src["recordsize"]) + " bytes at " + record, 3)
         record = int(record, 16)
         srcfile.seek(record)
         dstfile.seek(record)
@@ -230,12 +246,12 @@ else:
 
 # misc stats
 stop2 = datetime.datetime.now().timestamp()
-delta = round(stop2 - start, 2)
+delta = stop2 - start
 speed = round((src["size"] + dst["size"]) / delta / 1024 / 1024, 2)
 diffmb = round(len(diff) * src["recordsize"] / 1024 / 1024, 3)
 writtenmb = round(written / 1024 / 1024, 3)
-message("Actual copy speed: " + str(speed) + " MB/s, duration " + str(delta) + "s", 1)
-message("Record size:       " + str(src["recordsize"]), 2)
+message("Actual copy speed: " + str(speed) + " MB/s, " + str(round(delta, 2)) + "s", 1)
+message("Record size:       " + str(src["recordsize"]) + " bytes", 1)
 message("Different records: " + str(len(diff)), 1)
-message("Different MBytes:  " + str(diffmb), 1)
-message("Written MBytes:    " + str(writtenmb), 1)
+message("Different data:    " + str(diffmb) + " MB", 1)
+message("Written data:      " + str(writtenmb) + " MB", 1)
