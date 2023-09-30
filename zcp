@@ -104,11 +104,20 @@ parser.add_argument(
     "--checksum",
     action="store_true",
     default=False,
-    help="checksum-based comparison (default: dva-based)",
+    help="use checksum-based comparison (default: dva-based)",
+)
+parser.add_argument(
+    "-d",
+    "--dva",
+    action="store_true",
+    default=False,
+    help="force dva-based comparison",
 )
 args = parser.parse_args()
 src["path"] = args.srcfile
 dst["path"] = args.dstfile
+if args.dva:
+    args.checksum = False
 
 # create dst file if not exists
 if not os.path.exists(dst["path"]):
@@ -140,7 +149,7 @@ if src["recordsize"] != dst["recordsize"]:
     sys.exit(1)
 
 # if source is a file, we need checksum comparison
-if "@" not in str(src["dataset"]):
+if "@" not in str(src["dataset"]) and not args.dva:
     message("Copying unrelated files, dva-based comparison unavailable")
     args.checksum = True
 
@@ -181,7 +190,7 @@ if args.checksum:
                         cksum = "NULL"
                 tgt["records"][record] = cksum
 else:
-    message("Default (safe) DVA comparison selected", 1)
+    message("DVA (safe) comparison selected", 1)
     for tgt in (src, dst):
         for line in tgt["tmp"].readlines():
             m = re.search("^\s+ (\w+) +L0 +([\w:]+)", line)
