@@ -137,7 +137,7 @@ if src["recordsize"] != dst["recordsize"]:
         + dst["recordsize"]
         + "), aborting\n"
     )
-    sys.exit()
+    sys.exit(1)
 
 # if source is a file, we need checksum comparison
 if "@" not in str(src["dataset"]):
