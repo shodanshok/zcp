@@ -157,6 +157,10 @@ if "@" not in str(src["dataset"]) and not args.dva:
 if args.checksum:
     message("Checksum comparison selected, beware of collisions!")
 
+# inform about size mismatch
+if src["size"] != dst["size"]:
+    message("Size mismatch, destination file is going to be resized", 1)
+
 # sync pool and write record map into temp files
 message("Synching pool and running zdb", 1)
 execute(["zpool", "sync"])
