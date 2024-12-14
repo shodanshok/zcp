@@ -141,9 +141,9 @@ for tgt in (src, dst):
 if src["recordsize"] != dst["recordsize"]:
     sys.stderr.write(
         "Mismatched recordsize ("
-        + src["recordsize"]
+        + str(src["recordsize"])
         + " vs "
-        + dst["recordsize"]
+        + str(dst["recordsize"])
         + "), aborting\n"
     )
     sys.exit(1)
