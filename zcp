@@ -104,26 +104,42 @@ parser.add_argument(
     "--checksum",
     action="store_true",
     default=False,
-    help="use checksum-based comparison (default: dva-based)",
+    help="force checksum-based comparison",
 )
 parser.add_argument(
     "-d",
     "--dva",
     action="store_true",
+    default=True,
+    help="use dva-based comparison (default)",
+)
+parser.add_argument(
+    "-m",
+    "--compare",
+    action="store_true",
     default=False,
-    help="force dva-based comparison",
+    help="compare before update to minimize writes on dva-based comparison",
 )
 args = parser.parse_args()
 src["path"] = args.srcfile
 dst["path"] = args.dstfile
-if args.dva:
-    args.checksum = False
 
-# create dst file if not exists
+# src check
+if not os.path.exists(src["path"]):
+    message("Source file not found")
+    sys.exit(1)
+src["size"] = os.path.getsize(src["path"])
+
+# dst check
 if not os.path.exists(dst["path"]):
+    if args.dryrun:
+        message("Destination file not found")
+        sys.exit(1)
     dstfile = open(dst["path"], "w+b")
+    dstfile.truncate(src["size"])
     dstfile.flush()
     dstfile.close()
+dst["size"] = os.path.getsize(dst["path"])
 
 # find datasets and stat info
 for tgt in (src, dst):
@@ -132,9 +148,8 @@ for tgt in (src, dst):
     result = execute(["df", "--type=zfs", "--output=target", tgt["path"]])
     tgt["mount"] = result.stdout.splitlines()[1]
     tgt["relative"] = tgt["path"].replace(tgt["mount"], "").lstrip("/")
-    result = execute(["stat", "--format=%i,%s,%o", tgt["path"]])
-    tgt["inode"], size, recordsize = result.stdout.strip().split(",")
-    tgt["size"] = int(size)
+    result = execute(["stat", "--format=%i,%o", tgt["path"]])
+    tgt["inode"], recordsize = result.stdout.strip().split(",")
     tgt["recordsize"] = int(recordsize)
 
 # recordsize check
@@ -148,14 +163,16 @@ if src["recordsize"] != dst["recordsize"]:
     )
     sys.exit(1)
 
-# if source is a file, we need checksum comparison
-if "@" not in str(src["dataset"]) and not args.dva:
-    message("Copying unrelated files, dva-based comparison unavailable")
-    args.checksum = True
-
 # warn if using checksum-based comparison
 if args.checksum:
     message("Checksum comparison selected, beware of collisions!")
+    args.dva = False
+    args.compare = False
+
+# if source is a file, enable compare-before-update to minimize writes
+if "@" not in str(src["dataset"]) and args.dva:
+    message("Copying unrelated files, compare before update")
+    args.compare = True
 
 # inform about size mismatch
 if src["size"] != dst["size"]:
@@ -177,7 +194,7 @@ dst["tmp"].seek(0)
 
 # scan records
 # checksum: beware of collisions
-# safe/default: dva-based, no collision but more writes
+# safe/default: dva-based
 if args.checksum:
     for tgt in (src, dst):
         for line in tgt["tmp"].readlines():
@@ -233,38 +250,46 @@ for record in dst["records"]:
             diff.append(record)
             message("DIFF: " + record + " src:ZERO" + " dst:" + dcksum, 3)
 
+diffl = len(diff)
 stop1 = datetime.datetime.now().timestamp()
 delta = stop1 - start
 speed = round((src["size"] + dst["size"]) / delta / 1024 / 1024, 2)
 message("File scan speed:   " + str(speed) + " MB/s, " + str(round(delta, 2)) + "s", 1)
 
 # sync files
+written = 0
 if not args.dryrun:
     srcfile = open(src["path"], "rb")
     dstfile = open(dst["path"], "r+b")
     srcfile.seek(0)
     dstfile.seek(0)
     for record in diff:
-        message("WRITE: " + str(src["recordsize"]) + " bytes at " + record, 3)
+        update = True
         record = int(record, 16)
         srcfile.seek(record)
-        dstfile.seek(record)
         data = srcfile.read(src["recordsize"])
-        dstfile.write(data)
+        if args.compare:
+            dstfile.seek(record)
+            curr = dstfile.read(dst["recordsize"])
+            if data == curr:
+                update = False
+                diffl = diffl - 1
+        if update:
+            dstfile.seek(record)
+            dstfile.write(data)
+            written = written + src["recordsize"]
+            message("WRITE: " + str(src["recordsize"]) + " bytes at " + str(record), 3)
     dstfile.truncate(int(src["size"]))
     dstfile.flush()
-    written = len(diff) * src["recordsize"]
-else:
-    written = 0
 
 # misc stats
 stop2 = datetime.datetime.now().timestamp()
 delta = stop2 - start
 speed = round((src["size"] + dst["size"]) / delta / 1024 / 1024, 2)
-diffmb = round(len(diff) * src["recordsize"] / 1024 / 1024, 3)
+diffmb = round(diffl * src["recordsize"] / 1024 / 1024, 3)
 writtenmb = round(written / 1024 / 1024, 3)
 message("Actual copy speed: " + str(speed) + " MB/s, " + str(round(delta, 2)) + "s", 1)
 message("Record size:       " + str(src["recordsize"]) + " bytes", 1)
-message("Different records: " + str(len(diff)), 1)
+message("Different records: " + str(diffl), 1)
 message("Different data:    " + str(diffmb) + " MB", 1)
 message("Written data:      " + str(writtenmb) + " MB", 1)
