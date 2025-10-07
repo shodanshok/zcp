@@ -46,7 +46,7 @@ def execute(cmd):
     if result:
         if result.stderr:
             sys.stderr.write(result.stderr)
-            sys.exit()
+            sys.exit(result.returncode)
         else:
             return result
     return None
@@ -58,10 +58,17 @@ def background(cmd, tgt):
     if result:
         if result.stderr:
             sys.stderr.write(result.stderr)
-            sys.exit()
+            sys.exit(result.returncode)
         else:
             return result
     return None
+
+
+def linecheck(tgt, line):
+    if "L0" in line:
+        sys.stderr.write("Error parsing zdb for " + tgt + "\n")
+        sys.stderr.write(line)
+        sys.exit(1)
 
 
 def message(msg, level=0):
@@ -206,10 +213,12 @@ if args.checksum:
                     cksum = m.group(1)
                 else:
                     if "L0 0:0:0" in line:
-                        cksum = "ZERO"
+                        cksum = "0:0:0"
                     else:
-                        cksum = "NULL"
+                        linecheck(tgt, line)
                 tgt["records"][record] = cksum
+            else:
+                linecheck(tgt, line)
 else:
     message("DVA (safe) comparison selected", 1)
     for tgt in (src, dst):
@@ -219,6 +228,8 @@ else:
                 record = m.group(1)
                 cksum = m.group(2)
                 tgt["records"][record] = cksum
+            else:
+                linecheck(tgt, line)
 
 # compare records
 # src to dst
@@ -227,13 +238,13 @@ for record in src["records"]:
     scksum = src["records"][record]
     if record in dst["records"]:
         dcksum = dst["records"][record]
-        if scksum != "NULL" and scksum == dcksum:
+        if scksum == dcksum:
             message("SAME: " + record + " src:" + scksum + " dst:" + dcksum, 3)
         else:
             diff.append(record)
             message("DIFF: " + record + " src:" + scksum + " dst:" + dcksum, 3)
     else:
-        if scksum == "ZERO":
+        if scksum == "0:0:0":
             message("SAME: " + record + " src:" + scksum + " dst:ZERO", 3)
         else:
             diff.append(record)
@@ -244,7 +255,7 @@ for record in dst["records"]:
         break
     dcksum = dst["records"][record]
     if record not in src["records"]:
-        if dcksum == "ZERO":
+        if dcksum == "0:0:0":
             message("SAME: " + record + " src:ZERO" + " dst:" + dcksum, 3)
         else:
             diff.append(record)
