@@ -205,10 +205,10 @@ dst["tmp"].seek(0)
 if args.checksum:
     for tgt in (src, dst):
         for line in tgt["tmp"].readlines():
-            m = re.search("^\s+ (\w+) +L0", line)
+            m = re.search(r"^\s+ (\w+) +L0", line)
             if m:
                 record = m.group(1)
-                m = re.search("cksum=(\S+)", line)
+                m = re.search(r"cksum=(\S+)", line)
                 if m:
                     cksum = m.group(1)
                 else:
@@ -223,7 +223,7 @@ else:
     message("DVA (safe) comparison selected", 1)
     for tgt in (src, dst):
         for line in tgt["tmp"].readlines():
-            m = re.search("^\s+ (\w+) +L0 +([\w:]+)", line)
+            m = re.search(r"^\s+ (\w+) +L0 +([\w:]+)", line)
             if m:
                 record = m.group(1)
                 cksum = m.group(2)
@@ -271,7 +271,7 @@ message("File scan speed:   " + str(speed) + " MB/s, " + str(round(delta, 2)) + 
 written = 0
 srcfile = open(src["path"], "rb")
 dstfile = open(dst["path"], "rb")
-if not args.dryrun: 
+if not args.dryrun:
     dstfile = open(dst["path"], "r+b")
 for record in diff:
     update = True
