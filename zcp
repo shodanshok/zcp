@@ -176,8 +176,8 @@ if args.checksum:
     args.dva = False
     args.compare = False
 
-# if source is a file, enable compare-before-update to minimize writes
-if "@" not in str(src["dataset"]) and args.dva:
+# enable compare-before-update to minimize writes if copying unrelated files
+if args.dva and (src["inode"] != dst["inode"] or "@" not in str(src["dataset"])):
     message("Copying unrelated files, compare before update")
     args.compare = True
 
