@@ -126,8 +126,8 @@ parser.add_argument(
     help="compare before update to minimize writes on dva-based comparison",
 )
 args = parser.parse_args()
-src["path"] = args.srcfile
-dst["path"] = args.dstfile
+src["path"] = os.path.realpath(args.srcfile)
+dst["path"] = os.path.realpath(args.dstfile)
 
 # src check
 if not os.path.exists(src["path"]):
