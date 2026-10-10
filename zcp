@@ -292,6 +292,9 @@ for record in diff:
 if not args.dryrun:
     dstfile.truncate(int(src["size"]))
     dstfile.flush()
+# close files
+srcfile.close()
+dstfile.close()
 
 # misc stats
 stop2 = datetime.datetime.now().timestamp()
